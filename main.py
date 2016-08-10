@@ -24,6 +24,10 @@ class HttpClient(object):
     def response(self):
         return self._response
 
+    def __del__(self):
+        self._sock.close()
+        super(HttpClient, self).__del__()
+
 
 class HttpPackage(object):
 
