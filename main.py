@@ -6,27 +6,26 @@
 import asyncore
 import socket
 
+RECV_SOCK_MAP = {}
+SEND_SOCK_MAP = {}
 
-class HttpClient(object):
 
-    def __init__(self, package):
-        super(HttpClient, self).__init__()
-        assert isinstance(package, HttpPackage)
-        self._request_pack = package
-        self._sock = socket.socket()
-        self._response = ''
+class AsyncHttpClient(asyncore.dispatcher):
 
-    def request(self):
-        self._sock.connect(self._request_pack.host, self._request_pack.port)
-        self._response = self._sock.send(self._request_pack)
+    def __init__(self):
+        asyncore.dispatcher.__init__()
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.buffer = None
 
-    @property
-    def response(self):
-        return self._response
+    def handle_read(self):
+        print self.recv(8192)
 
-    def __del__(self):
-        self._sock.close()
-        super(HttpClient, self).__del__()
+    def writeable(self):
+        return True if buffer else False
+
+    def handle_write(self):
+        self.send(self[:1024])
+        self.buffer = self.buffer[1024:]
 
 
 class HttpPackage(object):
@@ -44,10 +43,20 @@ class HttpPackage(object):
         return self._port
 
 
+class ProxyHandle(asyncore.dispatcher_with_send):
+
+    def handle_read(self):
+        print 'ProxyHandle'
+        print self.recv(8192)
+
+    def handle_write(self):
+        pass
+
+
 class Proxy(asyncore.dispatcher_with_send):
 
     def __init__(self, host, port):
-        asyncore.dispatcher.__init__(self)
+        asyncore.dispatcher_with_send.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
         self.bind((host, port))
         self.listen(1)
@@ -56,16 +65,8 @@ class Proxy(asyncore.dispatcher_with_send):
         pair = self.accept()
         if pair is not None:
             sock, addr = pair
-            print 'Incoming connection from %s' % repr(addr)
-            package = sock.recv(8192)
-            print package
-            p_sock = socket.socket()
-            p_sock.connect(('www.baidu.com', 443))
-            p_sock.send(package)
-            res = p_sock.recv()
-            print res
-            p_sock.close()
-            sock.send(res)
+            ProxyHandle(sock)
+            # todo: put accept socket into another map
 
     def handle_read(self):
         package = self.recv(8192)
