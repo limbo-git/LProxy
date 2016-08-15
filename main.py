@@ -1,31 +1,39 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# __author__ = 'limbo'
 
 """
 """
 import asyncore
 import socket
 
-RECV_SOCK_MAP = {}
-SEND_SOCK_MAP = {}
+BUFFER_SIZE = 8192
+
+send_queue = []
+echo_queue = []
 
 
-class AsyncHttpClient(asyncore.dispatcher):
+class HttpClient(asyncore.dispatcher):
 
     def __init__(self):
-        asyncore.dispatcher.__init__()
+        asyncore.dispatcher.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.buffer = None
+
+    def writable(self):
+        global send_queue
+        return True if send_queue else False
+
+    def handle_connect(self):
+        self.log_info('httpclient connect')
+        self.send('GET / HTTP/1.0\r\n\r\n')
 
     def handle_read(self):
-        print self.recv(8192)
-
-    def writeable(self):
-        return True if buffer else False
+        global echo_queue
+        echo_queue.append(self.recv(BUFFER_SIZE))
 
     def handle_write(self):
-        self.send(self[:1024])
-        self.buffer = self.buffer[1024:]
+        global send_queue
+        self.send(send_queue.pop(0))
 
 
 class HttpPackage(object):
@@ -43,14 +51,27 @@ class HttpPackage(object):
         return self._port
 
 
-class ProxyHandle(asyncore.dispatcher_with_send):
+class ProxyHandle(asyncore.dispatcher):
+
+    def __init__(self, sock):
+        asyncore.dispatcher.__init__(self, sock)
+        self.client = HttpClient()
+
+    def writable(self):
+        global echo_queue
+        return True if echo_queue else False
 
     def handle_read(self):
+        global send_queue
         print 'ProxyHandle'
-        print self.recv(8192)
+        data = self.recv(BUFFER_SIZE)
+        self.log_info(data)
+        if not self.client.connected:
+            self.client.connect(('www.python.org', 80))
 
     def handle_write(self):
-        pass
+        global echo_queue
+        self.send(echo_queue.pop(0))
 
 
 class Proxy(asyncore.dispatcher_with_send):
@@ -60,17 +81,23 @@ class Proxy(asyncore.dispatcher_with_send):
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
         self.bind((host, port))
         self.listen(1)
+        self.handles = []
 
     def handle_accept(self):
         pair = self.accept()
         if pair is not None:
             sock, addr = pair
-            ProxyHandle(sock)
+            self.handles.append(ProxyHandle(sock))
             # todo: put accept socket into another map
 
     def handle_read(self):
-        package = self.recv(8192)
+        package = self.recv(BUFFER_SIZE)
         self.log_info(package)
 
-proxy = Proxy('localhost', 1234)
-asyncore.loop()
+
+def test():
+    Proxy('localhost', 1234)
+    asyncore.loop()
+
+if __name__ == '__main__':
+    test()
