@@ -7,71 +7,46 @@
 import asyncore
 import socket
 
+from http import AsyncHttpClient as HttpClient
+from http.parser import HttpParser
+
 BUFFER_SIZE = 8192
 
-send_queue = []
-echo_queue = []
 
+class ProxyHandle(asyncore.dispatcher_with_send):
 
-class HttpClient(asyncore.dispatcher):
-
-    def __init__(self):
-        asyncore.dispatcher.__init__(self)
-        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-
-    def writable(self):
-        global send_queue
-        return True if send_queue else False
-
-    def handle_connect(self):
-        self.log_info('httpclient connect')
-        self.send('GET / HTTP/1.0\r\n\r\n')
+    def __init__(self, sock, map=None):
+        asyncore.dispatcher_with_send.__init__(self, sock, map)
 
     def handle_read(self):
-        global echo_queue
-        echo_queue.append(self.recv(BUFFER_SIZE))
+        self.log_info('ProxyHandle->read')
 
     def handle_write(self):
-        global send_queue
-        self.send(send_queue.pop(0))
+        self.log_info('ProxyHandle->write')
 
 
-class HttpPackage(object):
-
-    def __init__(self, data):
-        super(HttpPackage, self).__init__()
-        self._data = data
-
-    @property
-    def host(self):
-        pass
-
-    @property
-    def port(self):
-        return self._port
-
-
-class ProxyHandle(asyncore.dispatcher):
+class HttpProxyHandle(ProxyHandle):
 
     def __init__(self, sock):
-        asyncore.dispatcher.__init__(self, sock)
-        self.client = HttpClient()
+        ProxyHandle.__init__(self, sock)
+        self.request_queue, self.response_queue = [], []
+        self.client = HttpClient(self.request_queue, self.response_queue)
+        self.parser = HttpParser()
 
     def writable(self):
-        global echo_queue
-        return True if echo_queue else False
+        return True if self.response_queue else False
 
     def handle_read(self):
-        global send_queue
-        print 'ProxyHandle'
+        ProxyHandle.handle_read(self)
         data = self.recv(BUFFER_SIZE)
-        self.log_info(data)
+        print data
         if not self.client.connected:
-            self.client.connect(('www.python.org', 80))
+            self.client.connect(('www.baidu.com', 443))
+            self.request_queue.append(data)
 
     def handle_write(self):
-        global echo_queue
-        self.send(echo_queue.pop(0))
+        ProxyHandle.handle_write(self)
+        self.send(self.response_queue.pop(0))
 
 
 class Proxy(asyncore.dispatcher_with_send):
@@ -87,7 +62,7 @@ class Proxy(asyncore.dispatcher_with_send):
         pair = self.accept()
         if pair is not None:
             sock, addr = pair
-            self.handles.append(ProxyHandle(sock))
+            self.handles.append(HttpProxyHandle(sock))
             # todo: put accept socket into another map
 
     def handle_read(self):
