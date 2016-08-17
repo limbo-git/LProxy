@@ -7,8 +7,8 @@ class HttpParser(object):
     def __init__(self):
         super(HttpParser, self).__init__()
 
-    def encode(self):
+    def encode(self, char):
         pass
 
-    def decode(self):
+    def decode(self, package):
         pass

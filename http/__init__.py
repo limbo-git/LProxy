@@ -5,6 +5,7 @@ import socket
 import asyncore
 
 from .parser import HttpParser
+from errno import EAGAIN, EWOULDBLOCK
 
 
 class AsyncHttpClient(asyncore.dispatcher):
@@ -15,10 +16,6 @@ class AsyncHttpClient(asyncore.dispatcher):
         self.request_queue = request_queue
         self.response_queue = response_queue
         self.parser = h_parser if h_parser is not None else HttpParser()
-        self._count = 0
-
-    def readable(self):
-        return bool(self._count)
 
     def writable(self):
         return True if self.request_queue else False
@@ -29,18 +26,38 @@ class AsyncHttpClient(asyncore.dispatcher):
 
     def handle_read(self):
         self.log_info('HttpClient->read')
+        temp = ''
         try:
-            data = self.recv(100)
-            print data
-            self.response_queue.append(data)
+            while True:
+                try:
+                    temp += self.recv(1)
+                except:
+                    import traceback
+                    traceback.print_exc()
+                    break
+            print temp
+            self.response_queue.append(temp)
+            # while True:
+            #     try:
+            #         char = self.recv(1)
+            #     except socket.error as e:
+            #         if e.args[0] == EAGAIN:
+            #             break
+            #         elif e.args[0] == EWOULDBLOCK:
+            #             break
+            #         else:
+            #             raise e
+            #     response = self.parser.encode(char)
+            # if response:
+            #     self.response_queue.append(response)
         except:
             import traceback
             traceback.print_exc()
 
     def handle_write(self):
         self.log_info('HttpClient->write')
-        self.send(self.request_queue.pop(0))
-        self._count += 1
+        while len(self.request_queue) > 0:
+            self.send(self.request_queue.pop(0))
 
 
 class SyncHttpClient(object):

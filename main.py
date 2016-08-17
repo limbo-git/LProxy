@@ -7,10 +7,10 @@
 import asyncore
 import socket
 
+from errno import EAGAIN
+
 from http import AsyncHttpClient as HttpClient
 from http.parser import HttpParser
-
-BUFFER_SIZE = 8192
 
 
 class ProxyHandle(asyncore.dispatcher_with_send):
@@ -30,7 +30,7 @@ class HttpProxyHandle(ProxyHandle):
     def __init__(self, sock):
         ProxyHandle.__init__(self, sock)
         self.request_queue, self.response_queue = [], []
-        self.client = HttpClient(self.request_queue, self.response_queue)
+        # self.client = HttpClient(self.request_queue, self.response_queue)
         self.parser = HttpParser()
 
     def writable(self):
@@ -38,15 +38,21 @@ class HttpProxyHandle(ProxyHandle):
 
     def handle_read(self):
         ProxyHandle.handle_read(self)
-        data = self.recv(BUFFER_SIZE)
+        data = ''
+        while True:
+            try:
+                data += self.recv(1)
+            except socket.error as e:
+                break
         print data
-        if not self.client.connected:
-            self.client.connect(('www.baidu.com', 443))
-            self.request_queue.append(data)
+        # if not self.client.connected:
+        # self.client.connect(('www.baidu.com', 443))
+        # self.request_queue.append(data)
 
     def handle_write(self):
         ProxyHandle.handle_write(self)
-        self.send(self.response_queue.pop(0))
+        while len(self.response_queue) > 0:
+            self.send(self.response_queue.pop(0))
 
 
 class Proxy(asyncore.dispatcher_with_send):
